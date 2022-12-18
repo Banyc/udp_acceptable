@@ -34,7 +34,8 @@ pub fn recv_from_to(
     //     size_t        msg_controllen; /* Ancillary data buffer len */
     //     int           msg_flags;      /* Flags on received message */ };
 
-    let mut cmsg_space = cmsg_space!(libc::in6_pktinfo, libc::in_pktinfo);
+    // sizeof(in6_pktinfo) > sizeof(in_pktinfo)
+    let mut cmsg_space = cmsg_space!(libc::in6_pktinfo);
     let msg = recvmsg::<SockaddrStorage>(fd, &mut iov, Some(&mut cmsg_space), MsgFlags::empty())?;
 
     // struct cmsghdr {
