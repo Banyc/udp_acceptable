@@ -23,6 +23,11 @@ impl EarlyPktRecv {
         &self.recv
     }
 }
+impl Drop for EarlyPktRecv {
+    fn drop(&mut self) {
+        self.remove();
+    }
+}
 
 pub struct EarlyPktSend {
     map: Arc<RwLock<EarlyPktMap>>,
