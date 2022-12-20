@@ -9,6 +9,7 @@ use nix::{
     sys::socket::{recvmsg, ControlMessageOwned, MsgFlags, SockaddrStorage},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FourTuple {
     pub local_addr: SocketAddr,
     pub remote_addr: SocketAddr,
