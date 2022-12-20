@@ -18,7 +18,6 @@ pub struct UdpListener {
 
 impl UdpListener {
     pub fn new(socket: socket2::Socket) -> io::Result<Self> {
-        socket.set_nonblocking(true)?;
         match socket
             .local_addr()?
             .as_socket()
