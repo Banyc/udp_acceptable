@@ -66,7 +66,21 @@ impl UdpListener {
         let local_port = self.local_port()?;
         let (four_tuple, len) = recv_from_to(self.socket.as_raw_fd(), rx_buf, local_port)?;
 
-        let conn = self.accept_raw(&four_tuple, Cow::Borrowed(&rx_buf[..len]))?;
+        let conn = self.accept_raw(&four_tuple, Cow::from(&rx_buf[..len]))?;
+
+        Ok((conn, four_tuple, len))
+    }
+
+    pub fn accept_owned(
+        &self,
+        mut rx_buf: Vec<u8>,
+    ) -> io::Result<(Option<UdpConn>, FourTuple, usize)> {
+        let local_port = self.local_port()?;
+        let (four_tuple, len) = recv_from_to(self.socket.as_raw_fd(), &mut rx_buf, local_port)?;
+
+        rx_buf.truncate(len);
+
+        let conn = self.accept_raw(&four_tuple, Cow::from(rx_buf))?;
 
         Ok((conn, four_tuple, len))
     }
