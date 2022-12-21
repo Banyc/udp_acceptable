@@ -18,6 +18,8 @@ pub struct UdpListener {
 
 impl UdpListener {
     pub fn new(socket: socket2::Socket) -> io::Result<Self> {
+        socket.set_reuse_address(true)?;
+        socket.set_reuse_port(true)?;
         match socket
             .local_addr()?
             .as_socket()
@@ -28,10 +30,10 @@ impl UdpListener {
             .ip()
         {
             std::net::IpAddr::V4(_) => {
-                setsockopt(socket.as_raw_fd(), Ipv4PacketInfo, &true).unwrap();
+                setsockopt(socket.as_raw_fd(), Ipv4PacketInfo, &true)?;
             }
             std::net::IpAddr::V6(_) => {
-                setsockopt(socket.as_raw_fd(), Ipv6RecvPacketInfo, &true).unwrap();
+                setsockopt(socket.as_raw_fd(), Ipv6RecvPacketInfo, &true)?;
             }
         }
         Ok(Self {
@@ -65,6 +67,8 @@ impl UdpListener {
             socket2::Type::DGRAM,
             Some(socket2::Protocol::UDP),
         )?;
+        socket.set_reuse_address(true)?;
+        socket.set_reuse_port(true)?;
         socket.bind(&four_tuple.local_addr.into())?;
         socket.connect(&four_tuple.remote_addr.into())?;
         let conn = UdpConn::new(socket, four_tuple, recv);
@@ -99,5 +103,212 @@ impl UdpListener {
             ))?
             .port();
         Ok(port)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serial_test::serial;
+
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
+
+    #[test]
+    #[serial]
+    fn test_listen_ipv4_wildcard() {
+        setup();
+        let listen_port = 12345;
+        let listen_addr_concrete = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), listen_port);
+        let listen_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), listen_port);
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .unwrap();
+        socket.bind(&listen_addr.into()).unwrap();
+        let mut listener = UdpListener::new(socket).unwrap();
+
+        let send_port = 54321;
+        let send_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), send_port);
+        let send_socket = UdpSocket::bind(send_addr).unwrap();
+
+        let send_buf = b"hello world";
+        let send_len = send_socket.send_to(send_buf, listen_addr_concrete).unwrap();
+        assert_eq!(send_len, send_buf.len());
+
+        let mut recv_buf = [0u8; 1024];
+        let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        assert_eq!(recv_len, send_len);
+        assert_eq!(&recv_buf[..recv_len], send_buf);
+        assert!(conn.is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn test_listen_ipv4_specific() {
+        setup();
+        let listen_port = 12345;
+        let listen_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), listen_port);
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .unwrap();
+        socket.bind(&listen_addr.into()).unwrap();
+        let mut listener = UdpListener::new(socket).unwrap();
+
+        let send_port = 54321;
+        let send_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), send_port);
+        let send_socket = UdpSocket::bind(send_addr).unwrap();
+
+        let send_buf = b"hello world";
+        let send_len = send_socket.send_to(send_buf, listen_addr).unwrap();
+        assert_eq!(send_len, send_buf.len());
+
+        let mut recv_buf = [0u8; 1024];
+        let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        assert_eq!(recv_len, send_len);
+        assert_eq!(&recv_buf[..recv_len], send_buf);
+        assert!(conn.is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn test_listen_ipv6_wildcard() {
+        setup();
+        let listen_port = 12345;
+        let listen_addr_concrete = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), listen_port);
+        let listen_addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), listen_port);
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV6,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .unwrap();
+        socket.bind(&listen_addr.into()).unwrap();
+        let mut listener = UdpListener::new(socket).unwrap();
+
+        let send_port = 54321;
+        let send_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), send_port);
+        let send_socket = UdpSocket::bind(send_addr).unwrap();
+
+        let send_buf = b"hello world";
+        let send_len = send_socket.send_to(send_buf, listen_addr_concrete).unwrap();
+        assert_eq!(send_len, send_buf.len());
+
+        let mut recv_buf = [0u8; 1024];
+        let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        assert_eq!(recv_len, send_len);
+        assert_eq!(&recv_buf[..recv_len], send_buf);
+        assert!(conn.is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn test_listen_ipv6_specific() {
+        setup();
+        let listen_port = 12345;
+        let listen_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), listen_port);
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV6,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .unwrap();
+        socket.bind(&listen_addr.into()).unwrap();
+        let mut listener = UdpListener::new(socket).unwrap();
+
+        let send_port = 54321;
+        let send_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), send_port);
+        let send_socket = UdpSocket::bind(send_addr).unwrap();
+
+        let send_buf = b"hello world";
+        let send_len = send_socket.send_to(send_buf, listen_addr).unwrap();
+        assert_eq!(send_len, send_buf.len());
+
+        let mut recv_buf = [0u8; 1024];
+        let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        assert_eq!(recv_len, send_len);
+        assert_eq!(&recv_buf[..recv_len], send_buf);
+        assert!(conn.is_some());
+    }
+
+    #[test]
+    #[serial]
+    fn test_listen_ipv4_specific_many_clients() {
+        setup();
+        let listen_port = 12345;
+        let listen_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), listen_port);
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .unwrap();
+        socket.bind(&listen_addr.into()).unwrap();
+        let mut listener = UdpListener::new(socket).unwrap();
+
+        let send_port_start = 54321;
+        let mut conns = Vec::new();
+        for i in 0..100 {
+            let send_port = send_port_start + i;
+            let send_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), send_port);
+            let send_socket = UdpSocket::bind(send_addr).unwrap();
+
+            let send_buf = b"hello world";
+            let send_len = send_socket.send_to(send_buf, listen_addr).unwrap();
+            assert_eq!(send_len, send_buf.len());
+
+            let mut recv_buf = [0u8; 1024];
+            let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+            assert_eq!(recv_len, send_len);
+            assert_eq!(&recv_buf[..recv_len], send_buf);
+            assert!(conn.is_some());
+
+            conns.push(conn.unwrap());
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_listen_ipv6_specific_many_clients() {
+        setup();
+        let listen_port = 12345;
+        let listen_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), listen_port);
+        let socket = socket2::Socket::new(
+            socket2::Domain::IPV6,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .unwrap();
+        socket.bind(&listen_addr.into()).unwrap();
+        let mut listener = UdpListener::new(socket).unwrap();
+
+        let send_port_start = 54321;
+        let mut conns = Vec::new();
+        for i in 0..100 {
+            let send_port = send_port_start + i;
+            let send_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), send_port);
+            let send_socket = UdpSocket::bind(send_addr).unwrap();
+
+            let send_buf = b"hello world";
+            let send_len = send_socket.send_to(send_buf, listen_addr).unwrap();
+            assert_eq!(send_len, send_buf.len());
+
+            let mut recv_buf = [0u8; 1024];
+            let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+            assert_eq!(recv_len, send_len);
+            assert_eq!(&recv_buf[..recv_len], send_buf);
+            assert!(conn.is_some());
+
+            conns.push(conn.unwrap());
+        }
+    }
+
+    fn setup() {
+        // wait for the OS to release the file descriptors
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
