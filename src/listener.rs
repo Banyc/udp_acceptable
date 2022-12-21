@@ -71,7 +71,7 @@ impl UdpListener {
         self.chan.recv_listener_pkt_mut()
     }
 
-    /// Force to create a new connection.
+    /// `accept` but without `recvmsg`
     ///
     /// This is useful when a connection received a packet that is meant for this listener.
     pub fn accept_raw(&self, four_tuple: &FourTuple, rx_buf: &[u8]) -> io::Result<Option<UdpConn>> {
