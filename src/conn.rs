@@ -1,4 +1,9 @@
-use crate::{early_pkt::channel::EarlyPktRecv, recv::FourTuple};
+use std::{io, os::fd::AsRawFd};
+
+use crate::{
+    early_pkt::channel::EarlyPktRecv,
+    recv::{recv_from_to, FourTuple},
+};
 
 pub struct UdpConn {
     socket: socket2::Socket,
@@ -27,6 +32,24 @@ impl UdpConn {
         &mut self.socket
     }
 
+    /// Receive a packet from the socket, not from the early packet channel.
+    ///
+    /// Returns the number of bytes received.
+    ///
+    /// If the received packet is not meant for this connection, returns `RecvRes::WrongPkt`.
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<(RecvRes, usize)> {
+        let (four_tuple, len) = recv_from_to(
+            self.socket.as_raw_fd(),
+            buf,
+            self.four_tuple.local_addr.port(),
+        )?;
+        if four_tuple != self.four_tuple {
+            return Ok((RecvRes::ListenerPkt(four_tuple), len));
+        }
+        Ok((RecvRes::Ok, len))
+    }
+
+    /// Receiver of the early packet channel.
     pub fn early_pkt_recv(&self) -> &EarlyPktRecv {
         &self.early_pkt_recv
     }
@@ -38,4 +61,9 @@ impl UdpConn {
     pub fn four_tuple(&self) -> &FourTuple {
         &self.four_tuple
     }
+}
+
+pub enum RecvRes {
+    Ok,
+    ListenerPkt(FourTuple),
 }
