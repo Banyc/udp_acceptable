@@ -1,7 +1,7 @@
 use std::{io, os::fd::AsRawFd};
 
 use crate::{
-    channel::ConnChan,
+    channel::{ConnChan, SendRes},
     recv::{recv_from_to, FourTuple},
 };
 
@@ -33,13 +33,19 @@ impl UdpConn {
     /// Returns the number of bytes received.
     ///
     /// If the received packet is not meant for this connection, returns `RecvRes::ListenerPkt`.
-    pub fn recv(&self, buf: &mut [u8]) -> io::Result<(RecvRes, usize)> {
+    pub fn recv(&mut self, buf: &mut [u8]) -> io::Result<(RecvRes, usize)> {
         let (four_tuple, len) = recv_from_to(
             self.socket.as_raw_fd(),
             buf,
             self.four_tuple.local_addr.port(),
         )?;
         if four_tuple != self.four_tuple {
+            let buf = buf[..len].to_vec();
+            match self.chan.send_listener_pkt(four_tuple, buf) {
+                SendRes::Ok => (),
+                SendRes::Full(_) => (),
+                SendRes::NotExist(_) => (),
+            };
             return Ok((RecvRes::ListenerPkt(four_tuple), len));
         }
         Ok((RecvRes::Ok, len))
