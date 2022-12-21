@@ -54,13 +54,13 @@ impl UdpListener {
     }
 
     /// <https://blog.cloudflare.com/everything-you-ever-wanted-to-know-about-udp-sockets-but-were-afraid-to-ask-part-1/>
-    pub fn accept(&self, rx_buf: &mut [u8]) -> io::Result<(Option<UdpConn>, usize)> {
+    pub fn accept(&self, rx_buf: &mut [u8]) -> io::Result<(Option<UdpConn>, FourTuple, usize)> {
         let local_port = self.local_port()?;
         let (four_tuple, len) = recv_from_to(self.socket.as_raw_fd(), rx_buf, local_port)?;
 
         let conn = self.accept_raw(&four_tuple, &rx_buf[..len])?;
 
-        Ok((conn, len))
+        Ok((conn, four_tuple, len))
     }
 
     pub fn recv_listener_pkt(&self) -> &mpsc::Receiver<(FourTuple, Vec<u8>)> {
@@ -203,7 +203,7 @@ mod tests {
         assert_eq!(send_len, send_buf.len());
 
         let mut recv_buf = [0u8; 1024];
-        let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
         assert_eq!(recv_len, send_len);
         assert_eq!(&recv_buf[..recv_len], send_buf);
         assert!(conn.is_some());
@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(send_len, send_buf.len());
 
         let mut recv_buf = [0u8; 1024];
-        let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
         assert_eq!(recv_len, send_len);
         assert_eq!(&recv_buf[..recv_len], send_buf);
         assert!(conn.is_some());
@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(send_len, send_buf.len());
 
         let mut recv_buf = [0u8; 1024];
-        let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
         assert_eq!(recv_len, send_len);
         assert_eq!(&recv_buf[..recv_len], send_buf);
         assert!(conn.is_some());
@@ -280,7 +280,7 @@ mod tests {
         assert_eq!(send_len, send_buf.len());
 
         let mut recv_buf = [0u8; 1024];
-        let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
         assert_eq!(recv_len, send_len);
         assert_eq!(&recv_buf[..recv_len], send_buf);
         assert!(conn.is_some());
@@ -309,7 +309,7 @@ mod tests {
             assert_eq!(send_len, send_buf.len());
 
             let mut recv_buf = [0u8; 1024];
-            let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+            let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
             assert_eq!(recv_len, send_len);
             assert_eq!(&recv_buf[..recv_len], send_buf);
             assert!(conn.is_some());
@@ -341,7 +341,7 @@ mod tests {
             assert_eq!(send_len, send_buf.len());
 
             let mut recv_buf = [0u8; 1024];
-            let (conn, recv_len) = listener.accept(&mut recv_buf).unwrap();
+            let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
             assert_eq!(recv_len, send_len);
             assert_eq!(&recv_buf[..recv_len], send_buf);
             assert!(conn.is_some());
