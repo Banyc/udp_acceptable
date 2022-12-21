@@ -62,7 +62,7 @@ impl UdpListener {
     }
 
     /// <https://blog.cloudflare.com/everything-you-ever-wanted-to-know-about-udp-sockets-but-were-afraid-to-ask-part-1/>
-    pub fn accept(&self, rx_buf: &mut [u8]) -> io::Result<(Option<UdpConn>, FourTuple, usize)> {
+    pub fn accept(&self, rx_buf: &mut [u8]) -> io::Result<(AcceptRes, FourTuple, usize)> {
         let local_port = self.local_port()?;
         let (four_tuple, len) = recv_from_to(self.socket.as_raw_fd(), rx_buf, local_port)?;
 
@@ -71,10 +71,7 @@ impl UdpListener {
         Ok((conn, four_tuple, len))
     }
 
-    pub fn accept_owned(
-        &self,
-        mut rx_buf: Vec<u8>,
-    ) -> io::Result<(Option<UdpConn>, FourTuple, usize)> {
+    pub fn accept_owned(&self, mut rx_buf: Vec<u8>) -> io::Result<(AcceptRes, FourTuple, usize)> {
         let local_port = self.local_port()?;
         let (four_tuple, len) = recv_from_to(self.socket.as_raw_fd(), &mut rx_buf, local_port)?;
 
@@ -96,13 +93,9 @@ impl UdpListener {
     /// `accept` but without `recvmsg`
     ///
     /// This is useful when a connection received a packet that is meant for this listener.
-    pub fn accept_raw(
-        &self,
-        four_tuple: &FourTuple,
-        rx_buf: Cow<[u8]>,
-    ) -> io::Result<Option<UdpConn>> {
+    pub fn accept_raw(&self, four_tuple: &FourTuple, rx_buf: Cow<[u8]>) -> io::Result<AcceptRes> {
         if !self.local_ip_filter.pass(&four_tuple.local_addr.ip()) {
-            return Ok(None);
+            return Ok(AcceptRes::Filtered);
         }
 
         let buf = rx_buf.into_owned();
@@ -110,8 +103,8 @@ impl UdpListener {
         // Send early packet to the existing connection.
         let res = self.chan.send_early_pkt(&four_tuple, buf);
         let buf = match res {
-            SendRes::Ok => return Ok(None),
-            SendRes::Full(_) => return Ok(None),
+            SendRes::Ok => return Ok(AcceptRes::ConnAlreadyExists),
+            SendRes::Full(_) => return Ok(AcceptRes::ConnAlreadyExists),
             SendRes::NotExist(buf) => buf,
         };
 
@@ -139,7 +132,7 @@ impl UdpListener {
             SendRes::NotExist(_) => unreachable!(),
         }
 
-        Ok(Some(conn))
+        Ok(AcceptRes::Ok(conn))
     }
 
     pub fn socket(&self) -> &socket2::Socket {
@@ -204,6 +197,12 @@ impl IpFilter {
     }
 }
 
+pub enum AcceptRes {
+    Ok(UdpConn),
+    ConnAlreadyExists,
+    Filtered,
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
@@ -230,10 +229,13 @@ mod tests {
         assert_eq!(send_len, send_buf.len());
 
         let mut recv_buf = [0u8; 1024];
-        let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        let (res, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
         assert_eq!(recv_len, send_len);
         assert_eq!(&recv_buf[..recv_len], send_buf);
-        assert!(conn.is_some());
+        let AcceptRes::Ok(conn) = res else {
+            panic!();
+        };
+        assert_eq!(conn.four_tuple().local_addr, listen_addr);
     }
 
     #[test]
@@ -256,10 +258,13 @@ mod tests {
         assert_eq!(send_len, send_buf.len());
 
         let mut recv_buf = [0u8; 1024];
-        let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        let (res, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
         assert_eq!(recv_len, send_len);
         assert_eq!(&recv_buf[..recv_len], send_buf);
-        assert!(conn.is_some());
+        let AcceptRes::Ok(conn) = res else {
+            panic!();
+        };
+        assert_eq!(conn.four_tuple().local_addr, listen_addr);
     }
 
     #[test]
@@ -267,7 +272,7 @@ mod tests {
     fn test_listen_ipv6_wildcard() {
         setup();
         let listen_port = 12345;
-        let listen_addr_concrete = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), listen_port);
+        let listen_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), listen_port);
         let local_ip_filter = IpFilterConfig::V6(None);
 
         let listener = UdpListener::bind(listen_port, local_ip_filter, false).unwrap();
@@ -277,14 +282,17 @@ mod tests {
         let send_socket = UdpSocket::bind(send_addr).unwrap();
 
         let send_buf = b"hello world";
-        let send_len = send_socket.send_to(send_buf, listen_addr_concrete).unwrap();
+        let send_len = send_socket.send_to(send_buf, listen_addr).unwrap();
         assert_eq!(send_len, send_buf.len());
 
         let mut recv_buf = [0u8; 1024];
-        let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        let (res, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
         assert_eq!(recv_len, send_len);
         assert_eq!(&recv_buf[..recv_len], send_buf);
-        assert!(conn.is_some());
+        let AcceptRes::Ok(conn) = res else {
+            panic!();
+        };
+        assert_eq!(conn.four_tuple().local_addr, listen_addr);
     }
 
     #[test]
@@ -307,10 +315,13 @@ mod tests {
         assert_eq!(send_len, send_buf.len());
 
         let mut recv_buf = [0u8; 1024];
-        let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
+        let (res, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
         assert_eq!(recv_len, send_len);
         assert_eq!(&recv_buf[..recv_len], send_buf);
-        assert!(conn.is_some());
+        let AcceptRes::Ok(conn) = res else {
+            panic!();
+        };
+        assert_eq!(conn.four_tuple().local_addr, listen_addr);
     }
 
     #[test]
@@ -336,12 +347,15 @@ mod tests {
             assert_eq!(send_len, send_buf.len());
 
             let mut recv_buf = [0u8; 1024];
-            let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
+            let (res, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
             assert_eq!(recv_len, send_len);
             assert_eq!(&recv_buf[..recv_len], send_buf);
-            assert!(conn.is_some());
+            let AcceptRes::Ok(conn) = res else {
+                panic!();
+            };
+            assert_eq!(conn.four_tuple().local_addr, listen_addr);
 
-            conns.push(conn.unwrap());
+            conns.push(conn);
         }
     }
 
@@ -368,12 +382,15 @@ mod tests {
             assert_eq!(send_len, send_buf.len());
 
             let mut recv_buf = [0u8; 1024];
-            let (conn, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
+            let (res, _, recv_len) = listener.accept(&mut recv_buf).unwrap();
             assert_eq!(recv_len, send_len);
             assert_eq!(&recv_buf[..recv_len], send_buf);
-            assert!(conn.is_some());
+            let AcceptRes::Ok(conn) = res else {
+                panic!();
+            };
+            assert_eq!(conn.four_tuple().local_addr, listen_addr);
 
-            conns.push(conn.unwrap());
+            conns.push(conn);
         }
     }
 
