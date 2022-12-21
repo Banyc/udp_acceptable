@@ -1,26 +1,22 @@
 use std::{io, os::fd::AsRawFd};
 
 use crate::{
-    early_pkt::channel::EarlyPktRecv,
+    early_pkt::channel::ConnChan,
     recv::{recv_from_to, FourTuple},
 };
 
 pub struct UdpConn {
     socket: socket2::Socket,
     four_tuple: FourTuple,
-    early_pkt_recv: EarlyPktRecv,
+    chan: ConnChan,
 }
 
 impl UdpConn {
-    pub fn new(
-        socket: socket2::Socket,
-        four_tuple: FourTuple,
-        early_pkt_recv: EarlyPktRecv,
-    ) -> Self {
+    pub fn new(socket: socket2::Socket, four_tuple: FourTuple, chan: ConnChan) -> Self {
         Self {
             socket,
             four_tuple,
-            early_pkt_recv,
+            chan,
         }
     }
 
@@ -50,12 +46,12 @@ impl UdpConn {
     }
 
     /// Receiver of the early packet channel.
-    pub fn early_pkt_recv(&self) -> &EarlyPktRecv {
-        &self.early_pkt_recv
+    pub fn recv_early_pkt(&self) -> &ConnChan {
+        &self.chan
     }
 
-    pub fn early_pkt_recv_mut(&mut self) -> &mut EarlyPktRecv {
-        &mut self.early_pkt_recv
+    pub fn recv_early_pkt_mut(&mut self) -> &mut ConnChan {
+        &mut self.chan
     }
 
     pub fn four_tuple(&self) -> &FourTuple {
