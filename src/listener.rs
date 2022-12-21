@@ -12,8 +12,8 @@ use nix::sys::socket::{
 };
 
 use crate::{
+    channel::{ListenerChan, SendRes},
     conn::UdpConn,
-    early_pkt::channel::{ListenerChan, SendRes},
     recv::{recv_from_to, FourTuple},
 };
 

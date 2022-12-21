@@ -1,7 +1,7 @@
 use std::{io, os::fd::AsRawFd};
 
 use crate::{
-    early_pkt::channel::ConnChan,
+    channel::ConnChan,
     recv::{recv_from_to, FourTuple},
 };
 

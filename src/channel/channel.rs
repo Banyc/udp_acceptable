@@ -4,7 +4,7 @@ use futures::channel::mpsc;
 
 use crate::recv::FourTuple;
 
-use super::map::EarlyPktMap;
+use super::early_pkt_map::EarlyPktMap;
 
 pub struct ConnChan {
     early_pkt_map: Weak<RwLock<EarlyPktMap>>,
