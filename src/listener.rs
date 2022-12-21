@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashSet,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -21,9 +22,14 @@ pub struct UdpListener {
     socket: socket2::Socket,
     chan: ListenerChan,
     local_ip_filter: IpFilter,
+    non_blocking: bool,
 }
 impl UdpListener {
-    pub fn bind(port: u16, local_ip_filter: IpFilterConfig) -> io::Result<Self> {
+    pub fn bind(
+        port: u16,
+        local_ip_filter: IpFilterConfig,
+        non_blocking: bool,
+    ) -> io::Result<Self> {
         let socket = socket2::Socket::new(
             match local_ip_filter {
                 IpFilterConfig::V4(_) => socket2::Domain::IPV4,
@@ -36,6 +42,7 @@ impl UdpListener {
             IpFilterConfig::V4(_) => SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port),
             IpFilterConfig::V6(_) => SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), port),
         };
+        socket.set_nonblocking(non_blocking)?;
         socket.set_reuse_address(true)?;
         match local_ip_filter {
             IpFilterConfig::V4(_) => {
@@ -50,6 +57,7 @@ impl UdpListener {
             socket,
             chan: ListenerChan::new(),
             local_ip_filter: local_ip_filter.build(),
+            non_blocking,
         })
     }
 
@@ -58,7 +66,7 @@ impl UdpListener {
         let local_port = self.local_port()?;
         let (four_tuple, len) = recv_from_to(self.socket.as_raw_fd(), rx_buf, local_port)?;
 
-        let conn = self.accept_raw(&four_tuple, &rx_buf[..len])?;
+        let conn = self.accept_raw(&four_tuple, Cow::Borrowed(&rx_buf[..len]))?;
 
         Ok((conn, four_tuple, len))
     }
@@ -74,12 +82,16 @@ impl UdpListener {
     /// `accept` but without `recvmsg`
     ///
     /// This is useful when a connection received a packet that is meant for this listener.
-    pub fn accept_raw(&self, four_tuple: &FourTuple, rx_buf: &[u8]) -> io::Result<Option<UdpConn>> {
+    pub fn accept_raw(
+        &self,
+        four_tuple: &FourTuple,
+        rx_buf: Cow<[u8]>,
+    ) -> io::Result<Option<UdpConn>> {
         if !self.local_ip_filter.pass(&four_tuple.local_addr.ip()) {
             return Ok(None);
         }
 
-        let buf = Vec::from(rx_buf);
+        let buf = rx_buf.into_owned();
 
         // Send early packet to the existing connection.
         let res = self.chan.send_early_pkt(&four_tuple, buf);
@@ -99,6 +111,7 @@ impl UdpListener {
             socket2::Type::DGRAM,
             Some(socket2::Protocol::UDP),
         )?;
+        socket.set_nonblocking(self.non_blocking)?;
         socket.set_reuse_address(true)?;
         socket.bind(&four_tuple.local_addr.into())?;
         socket.connect(&four_tuple.remote_addr.into())?;
@@ -192,7 +205,7 @@ mod tests {
         let listen_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), listen_port);
         let local_ip_filter = IpFilterConfig::V4(None);
 
-        let listener = UdpListener::bind(listen_port, local_ip_filter).unwrap();
+        let listener = UdpListener::bind(listen_port, local_ip_filter, false).unwrap();
 
         let send_port = 54321;
         let send_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), send_port);
@@ -218,7 +231,7 @@ mod tests {
         let local_ip_filter =
             IpFilterConfig::V4(Some([Ipv4Addr::LOCALHOST].iter().cloned().collect()));
 
-        let listener = UdpListener::bind(listen_port, local_ip_filter).unwrap();
+        let listener = UdpListener::bind(listen_port, local_ip_filter, false).unwrap();
 
         let send_port = 54321;
         let send_addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), send_port);
@@ -243,7 +256,7 @@ mod tests {
         let listen_addr_concrete = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), listen_port);
         let local_ip_filter = IpFilterConfig::V6(None);
 
-        let listener = UdpListener::bind(listen_port, local_ip_filter).unwrap();
+        let listener = UdpListener::bind(listen_port, local_ip_filter, false).unwrap();
 
         let send_port = 54321;
         let send_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), send_port);
@@ -269,7 +282,7 @@ mod tests {
         let local_ip_filter =
             IpFilterConfig::V6(Some([Ipv6Addr::LOCALHOST].iter().cloned().collect()));
 
-        let listener = UdpListener::bind(listen_port, local_ip_filter).unwrap();
+        let listener = UdpListener::bind(listen_port, local_ip_filter, false).unwrap();
 
         let send_port = 54321;
         let send_addr = SocketAddr::new(Ipv6Addr::LOCALHOST.into(), send_port);
@@ -295,7 +308,7 @@ mod tests {
         let local_ip_filter =
             IpFilterConfig::V4(Some([Ipv4Addr::LOCALHOST].iter().cloned().collect()));
 
-        let listener = UdpListener::bind(listen_port, local_ip_filter).unwrap();
+        let listener = UdpListener::bind(listen_port, local_ip_filter, false).unwrap();
 
         let send_port_start = 54321;
         let mut conns = Vec::new();
@@ -327,7 +340,7 @@ mod tests {
         let local_ip_filter =
             IpFilterConfig::V6(Some([Ipv6Addr::LOCALHOST].iter().cloned().collect()));
 
-        let listener = UdpListener::bind(listen_port, local_ip_filter).unwrap();
+        let listener = UdpListener::bind(listen_port, local_ip_filter, false).unwrap();
 
         let send_port_start = 54321;
         let mut conns = Vec::new();
