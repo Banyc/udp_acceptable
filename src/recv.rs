@@ -1,7 +1,7 @@
 use std::{
     io::{self, IoSliceMut},
     net::{Ipv4Addr, SocketAddr},
-    os::unix::prelude::RawFd,
+    os::fd::RawFd,
 };
 
 use nix::{
@@ -130,7 +130,7 @@ mod tests {
     use super::*;
     use std::{
         net::{Ipv6Addr, UdpSocket},
-        os::unix::prelude::AsRawFd,
+        os::fd::AsRawFd,
     };
 
     #[test]

@@ -1,4 +1,4 @@
-use std::{io, os::unix::prelude::AsRawFd};
+use std::{io, os::fd::AsRawFd};
 
 use nix::sys::socket::{
     setsockopt,
