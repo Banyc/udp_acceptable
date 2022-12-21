@@ -40,12 +40,12 @@ impl EarlyPktSend {
     }
 
     pub fn insert(&self, four_tuple: FourTuple) -> EarlyPktRecv {
-        let sender = mpsc::channel(1).0;
+        let (sender, receiver) = mpsc::channel(1);
         self.map.write().unwrap().insert(four_tuple, sender);
         EarlyPktRecv {
             map: Arc::downgrade(&self.map),
             key: four_tuple,
-            recv: mpsc::channel(1).1,
+            recv: receiver,
         }
     }
 
