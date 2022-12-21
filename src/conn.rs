@@ -36,7 +36,7 @@ impl UdpConn {
     ///
     /// Returns the number of bytes received.
     ///
-    /// If the received packet is not meant for this connection, returns `RecvRes::WrongPkt`.
+    /// If the received packet is not meant for this connection, returns `RecvRes::ListenerPkt`.
     pub fn recv(&self, buf: &mut [u8]) -> io::Result<(RecvRes, usize)> {
         let (four_tuple, len) = recv_from_to(
             self.socket.as_raw_fd(),

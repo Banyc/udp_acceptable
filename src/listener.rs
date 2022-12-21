@@ -13,7 +13,7 @@ use nix::sys::socket::{
 use crate::{
     conn::UdpConn,
     early_pkt::channel::{EarlyPktSend, EarlyPktSendRes},
-    recv::recv_from_to,
+    recv::{recv_from_to, FourTuple},
 };
 
 pub struct UdpListener {
@@ -57,22 +57,31 @@ impl UdpListener {
         let local_port = self.local_port()?;
         let (four_tuple, len) = recv_from_to(self.socket.as_raw_fd(), rx_buf, local_port)?;
 
+        let conn = self.accept_raw(&rx_buf[..len], &four_tuple)?;
+
+        Ok((conn, len))
+    }
+
+    /// Force to create a new connection.
+    ///
+    /// This is useful when a connection received a packet that is meant for this listener.
+    pub fn accept_raw(&self, rx_buf: &[u8], four_tuple: &FourTuple) -> io::Result<Option<UdpConn>> {
         if !self.local_ip_filter.pass(&four_tuple.local_addr.ip()) {
-            return Ok((None, len));
+            return Ok(None);
         }
 
-        let buf = Vec::from(&rx_buf[..len]);
+        let buf = Vec::from(rx_buf);
 
         // Send early packet to the existing connection.
         let res = self.early_pkt_sender.send(&four_tuple, buf);
         let buf = match res {
-            EarlyPktSendRes::Ok => return Ok((None, len)),
-            EarlyPktSendRes::Full(_) => return Ok((None, len)),
+            EarlyPktSendRes::Ok => return Ok(None),
+            EarlyPktSendRes::Full(_) => return Ok(None),
             EarlyPktSendRes::NotExist(buf) => buf,
         };
 
         // Create a new connection.
-        let recv = self.early_pkt_sender.insert(four_tuple);
+        let recv = self.early_pkt_sender.insert(four_tuple.clone());
         let socket = socket2::Socket::new(
             match four_tuple.local_addr.ip() {
                 std::net::IpAddr::V4(_) => socket2::Domain::IPV4,
@@ -84,7 +93,7 @@ impl UdpListener {
         socket.set_reuse_address(true)?;
         socket.bind(&four_tuple.local_addr.into())?;
         socket.connect(&four_tuple.remote_addr.into())?;
-        let conn = UdpConn::new(socket, four_tuple, recv);
+        let conn = UdpConn::new(socket, four_tuple.clone(), recv);
 
         // Send early packet to the new connection.
         let res = self.early_pkt_sender.send(&conn.four_tuple(), buf);
@@ -94,7 +103,7 @@ impl UdpListener {
             EarlyPktSendRes::NotExist(_) => unreachable!(),
         }
 
-        Ok((Some(conn), len))
+        Ok(Some(conn))
     }
 
     pub fn socket(&self) -> &socket2::Socket {
